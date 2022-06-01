@@ -122,12 +122,14 @@ def config_submit_pw(config: dict, name: str):
 
     return False
 
-def run_thread(suite: dict, test):
-    src = suite[test.inherit_src].src_dir if test.inherit_src else None
+def run_thread(suite: dict, constructor):
+    src = suite[constructor.inherit_src].src_dir if constructor.inherit_src else None
 
-    suite[test.name] = test(src_dir=src)
+    test = constructor(src_dir=src)
+    suite[constructor.name] = test
 
-    for dep in suite[test.name].depends:
+
+    for dep in test.depends:
         if dep == '*':
             continue
 
@@ -142,8 +144,8 @@ def run_thread(suite: dict, test):
 
     try:
         test.linfo("%s Started" % test.name)
-        suite[test.name].start_timer()
-        suite[test.name].run()
+        test.start_timer()
+        test.run()
     except EndTest:
         if test.verdict == Verdict.SKIP:
             test.linfo("%s Skipped" % test.name)
@@ -152,7 +154,8 @@ def run_thread(suite: dict, test):
         traceback.print_exc()
         test.verdict = Verdict.FAIL
     finally:
-        suite[test.name].end_timer()
+        test.end_timer()
+
         test.linfo("%s Ended" % test.name)
 
 class Pipeline:
@@ -257,6 +260,7 @@ class CiBase:
     settings = None
     # If true, don't run test concurrently with others
     isolate = False
+    workdir = os.environ.get('WORKDIR', '/tmp')
 
     verdict = Verdict.PENDING
     output = ""
@@ -264,8 +268,8 @@ class CiBase:
     #
     # Support several ways to initialize src_dir:
     #
-    # 1. Copy src_path to a random /tmp/XXXXXXX directory (default)
-    # 2. Copy provided src_dir to /tmp/<basename> of src_dir i.e. keep dir name
+    # 1. Copy src_path to a random <WORKDIR>/XXXXXXX directory (default)
+    # 2. Copy provided src_dir to <WORKDIR>/<basename> of src_dir i.e. keep dir name
     # 3. Inherit src_dir from a dependent test, no copies are done.
     #
     def __init__(self, src_dir=None):
@@ -283,11 +287,11 @@ class CiBase:
         copy_from = src_dir if src_dir else self.args.src_path
 
         if src_dir:
-            self.src_dir = '/tmp/' + os.path.basename(src_dir)
+            self.src_dir = os.path.join(self.workdir, os.path.basename(src_dir))
         else:
-            self.src_dir = '/tmp/' + ''.join(random.choices(
+            self.src_dir = os.path.join(self.workdir, ''.join(random.choices(
                                             string.ascii_uppercase +
-                                            string.digits, k = 10))
+                                            string.digits, k = 10)))
 
         if os.path.exists(self.src_dir):
                 shutil.rmtree(self.src_dir)
@@ -299,7 +303,8 @@ class CiBase:
         if self.inherit_src or self.disable_src_dir:
             return
 
-        shutil.rmtree(self.src_dir)
+        if os.path.exists(self.src_dir):
+            shutil.rmtree(self.src_dir)
 
         self.ldebug("Source contents removed from %s" % self.src_dir)
 
@@ -463,6 +468,8 @@ class PatchworkSetup(CiBase):
             self.user = int(self.settings['user'])
 
     def run(self):
+        self.config()
+
         if self.user and self.args.repo and self.args.pr_num:
             CiBase.patchwork = Patchwork(self.user, self.args.repo,
                                          self.args.pr_num)
@@ -803,6 +810,7 @@ class MakeCheck(CiBase):
     inherit_src = 'buildmake'
 
     def run(self):
+        os.system('cat %s/cache/strace_out' % os.environ['GITHUB_WORKSPACE'])
         self.ldebug("##### Run MakeCheck Test #####")
 
         # Run make check. Assume the code is already configured and problem
