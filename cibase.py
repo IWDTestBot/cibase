@@ -93,6 +93,15 @@ def init_config(file: str, logger: logging.Logger):
 
     return config
 
+def path_resolve(path: str):
+    if not os.path.isabs(path):
+        if not os.environ.get('GITHUB_WORKSPACE', None):
+            raise Exception('GITHUB_WORKSPACE must be set to use relative paths')
+
+        path = os.path.join(os.environ['GITHUB_WORKSPACE'], path)
+
+    return path
+
 def config_enable(config: dict, name: str):
     """
     Check "enable" in config[name].
@@ -328,10 +337,6 @@ class CiBase:
         # Populate the test suite
         cls.suite = dict([(t.name, t) for t in cls.__subclasses__() if t.enable])
 
-        # Initialize as pending
-        for t in cls.suite.values():
-            t.submit_result(t, Verdict.PENDING, "%s PENDING" % t.display_name)
-
         if cls.args.show_test_list:
             print("Running tests:")
             for name in cls.suite.keys():
@@ -470,17 +475,26 @@ class PatchworkSetup(CiBase):
     def run(self):
         self.config()
 
-        if self.user and self.args.repo and self.args.pr_num:
-            CiBase.patchwork = Patchwork(self.user, self.args.repo,
-                                         self.args.pr_num)
+        if not self.user or not self.args.repo or not self.args.pr_num:
+            # 'fetch' behaves differently depending on if patchwork is used or
+            # not but the patchwork object must be initialized prior to fetch.
+            # Since fetch/checkpath/gitlint check for self.patchwork its safe to
+            # signal success so these tests get run.
             self.success()
 
-        self.skip("Not using patchwork in run, skipping")
+        CiBase.patchwork = Patchwork(self.user, self.args.repo, self.args.pr_num)
+
+        # Initialize as pending
+        for t in CiBase.suite.values():
+            t.submit_result(Verdict.PENDING, "%s PENDING" % t.display_name)
+
+        self.success()
 
 class FetchPR(CiBase):
     name = "fetch"
     display_name = "Fetch PR"
     desc = "Fetch the PR commits for this CI run"
+    depends = ['patchwork']
 
     def cmd_failed(self, stderr):
         self.lerror("Failed to fetch the PR commits. error=%s" % stderr)
@@ -528,18 +542,21 @@ class CheckPatch(CiBase):
         """
         Config the test cases.
         """
-        self.ldebug("Parser configuration")
+        if not self.settings:
+            return
 
-        if self.settings:
-            if 'bin_path' in self.settings:
-                self.checkpatch_pl = self.settings['bin_path']
+        if 'bin_path' in self.settings:
+            self.checkpatch_pl = path_resolve(self.settings['bin_path'])
 
-            if 'no_signoff' in self.settings:
-                self.no_sob = self.settings['no_signoff'] == 'yes'
+        if 'no_signoff' in self.settings:
+            self.no_sob = self.settings['no_signoff'] == 'yes'
 
         self.ldebug("checkpatch_pl = %s" % self.checkpatch_pl)
 
     def run(self):
+        if not self.patchwork:
+            self.skip('Patchwork not being used, skipping')
+
         self.ldebug("##### Run CheckPatch Test #####")
 
         self.config()
@@ -623,15 +640,16 @@ class GitLint(CiBase):
         """
         Config the test cases.
         """
-        self.ldebug("Parser configuration")
+        if not self.settings:
+            return
 
-        if self.settings:
-            if 'config_path' in self.settings:
-                self.gitlint_config = self.settings['config_path']
-
-        self.ldebug("gitlint_config = %s" % self.gitlint_config)
+        if 'config_path' in self.settings:
+            self.gitlint_config = path_resolve(self.settings['config_path'])
 
     def run(self):
+        if not self.patchwork:
+            self.skip('Patchwork not being used, skipping')
+
         self.ldebug("##### Run Gitlint v2 Test #####")
 
         self.config()
@@ -689,6 +707,7 @@ class BuildSetup_ell(CiBase):
     display_name = "Prep - Setup ELL"
     desc = "Clone, build, and install ELL"
     install = 'yes'
+    depends = ['patchwork']
 
     def config(self):
         if self.settings:
