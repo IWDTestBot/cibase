@@ -146,7 +146,7 @@ def run_thread(suite: dict, constructor):
             continue
 
         test.linfo("%s did not pass. skipping %s test" % (dep, test.name))
-        test.submit_result(test, Verdict.SKIP, "%s SKIP" % test.name)
+        test.submit_result(Verdict.SKIP, "%s SKIP" % test.name)
         test.verdict = Verdict.SKIP
         test.output = "%s was skipped" % test.name
         return
@@ -407,8 +407,9 @@ class CiBase:
         in the series so don't require a specific patch being passed in (this
         can be forced with patch=)
         """
+        name = cls.name
 
-        if cls.submit_pw == False:
+        if not cls.submit_pw:
             return
 
         if not cls.patchwork:
@@ -419,7 +420,17 @@ class CiBase:
 
         cls.ldebug("Submitting the result to Patchwork")
         pw_output = cls.patchwork.post_result(patch, patchwork_state(verdict),
-                                                cls.name, description)
+                                                name, description)
+
+        # All checks are first initialized as 'pending' in the first patch set,
+        # but if a test case submits a result for an individual patch (that is
+        # not patch 0) the 'pending' status will never get cleared. Take care
+        # of this automatically by submitting the same result to patch 0.
+        if patch != cls.patchwork[0]:
+            cls.patchwork.post_result(cls.patchwork[0],
+                                                patchwork_state(verdict),
+                                                name, description)
+
         cls.ldebug("Submit result\n%s" % pw_output)
 
     def run_cmd(self, *args):
@@ -928,6 +939,9 @@ class IncrementalBuild(CiBase):
     depends = ['setupell', 'patchwork']
 
     def run(self):
+        if not self.patchwork:
+            self.skip("Patchwork not being used, skipping")
+
         self.ldebug("##### Run Incremental Build Test #####")
 
         # If there is only one patch, no need to run and just return success
@@ -938,11 +952,11 @@ class IncrementalBuild(CiBase):
             self.success()
 
         # Make the source base to workflow branch
-        (ret, stdout, stderr) = self.run_cmd("git", "checkout",
-                                                "origin/workflow")
+        #(ret, stdout, stderr) = self.run_cmd("git", "checkout",
+        #                                        "origin/workflow")
 
         # Get the patch from the series, apply it and build.
-        for patch in self.patchwork:
+        for i, patch in enumerate(self.patchwork):
             self.ldebug("patch id: %s" % patch['id'])
             self.ldebug("patch name: %s" % patch['name'])
 
@@ -951,7 +965,8 @@ class IncrementalBuild(CiBase):
             if error != None:
                 msg = "{}\n{}".format(patch['name'], error)
                 self.submit_result(Verdict.FAIL,
-                                   "Applying Patch FAIL: " + error, patch=patch)
+                                   "Applying Patch FAIL (patch %d): " % i + error,
+                                   patch=patch)
                 self.add_failure_end_test(msg)
 
             self.ldebug("Patch applied")
@@ -960,7 +975,7 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("./bootstrap-configure")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Build Configuration FAIL: " + stderr,
+                                   "Build Configuration FAIL (patch %d): " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
@@ -968,7 +983,7 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("make", "-j4")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Make FAIL: " + stderr,
+                                   "Make FAIL (patch %d):  " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
@@ -976,7 +991,7 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("make", "distclean")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Make Clean FAIL: " + stderr,
+                                   "Make Clean FAIL (patch %d): " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
@@ -998,7 +1013,8 @@ class IncrementalBuild(CiBase):
 
         try:
             output = subprocess.check_output(('git', 'am', filename),
-                                             stderr=subprocess.STDOUT)
+                                             stderr=subprocess.STDOUT,
+                                             cwd=self.src_dir)
             output = output.decode("utf-8")
 
         except subprocess.CalledProcessError as ex:
@@ -1031,9 +1047,12 @@ class GithubComment(CiBase):
     disable_src_dir = True
 
     def run(self):
+        if not self.patchwork:
+            self.skip('Patchwork not being used, skipping')
+
         comment = ''
         for test in self.suite.values():
-            if '*' in test.depends:
+            if '*' in test.depends or not test.submit_pw:
                 continue
 
             comment += RESULTS_FORMAT.format(name=test.name,
@@ -1171,9 +1190,12 @@ class EmailResults(CiBase):
         self.send_email(sender, receivers, msg)
 
     def run(self):
+        if not self.patchwork:
+            self.skip('Patchwork not being used, skipping')
+
         results = ''
         for test in self.suite.values():
-            if '*' in test.depends:
+            if '*' in test.depends or not test.submit_pw:
                 continue
 
             results += RESULTS_FORMAT.format(name=test.name,
@@ -1191,3 +1213,7 @@ class EmailResults(CiBase):
         self.compose_email(self.patchwork.series['name'], email,
                             self.patchwork.series['submitter']['email'],
                             self.patchwork[0]['msgid'])
+
+if __name__ == '__main__':
+    CiBase.run()
+    CiBase.print_results()
