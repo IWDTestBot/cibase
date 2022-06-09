@@ -407,7 +407,9 @@ class CiBase:
         in the series so don't require a specific patch being passed in (this
         can be forced with patch=)
         """
-        name = cls.name
+        job = os.environ.get('GITHUB_JOB', None)
+        if job:
+            name = '%s-%s' % (job, cls.name)
 
         if not cls.submit_pw:
             return
@@ -519,20 +521,11 @@ class FetchPR(CiBase):
             self.ldebug("Running without patches, skipping PR fetch")
             self.success()
 
-        self.ldebug("Fetch PR #%d commits in the tree" % self.args.pr_num)
-
-        (ret, stdout, stderr) = self.run_cmd("git", "remote", "add",
-                                "_ci_origin",
-                                "https://github.com/%s.git" % self.args.repo)
+        (ret, stdout, stderr) = self.run_cmd("git", "fetch", "origin", "pull/%d/head:pr" % self.args.pr_num)
         if ret:
             self.cmd_failed(stderr)
 
-        (ret, stdout, stderr) = self.run_cmd("git", "fetch", "_ci_origin",
-                                "pull/%d/head:_pr_branch" % self.args.pr_num)
-        if ret:
-            self.cmd_failed(stderr)
-
-        (ret, stdout, stderr) = self.run_cmd("git", "checkout", "_pr_branch")
+        (ret, stdout, stderr) = self.run_cmd("git", "checkout", "pr")
         if ret:
             self.cmd_failed(stderr)
 
@@ -840,7 +833,6 @@ class MakeCheck(CiBase):
     inherit_src = 'buildmake'
 
     def run(self):
-        os.system('cat %s/cache/strace_out' % os.environ['GITHUB_WORKSPACE'])
         self.ldebug("##### Run MakeCheck Test #####")
 
         # Run make check. Assume the code is already configured and problem
@@ -951,9 +943,11 @@ class IncrementalBuild(CiBase):
                                 "Incremental build not run PASS")
             self.success()
 
+        self.run_cmd('git', 'fetch')
+
         # Make the source base to workflow branch
-        #(ret, stdout, stderr) = self.run_cmd("git", "checkout",
-        #                                        "origin/workflow")
+        (ret, stdout, stderr) = self.run_cmd("git", "checkout",
+                                                "origin/master")
 
         # Get the patch from the series, apply it and build.
         for i, patch in enumerate(self.patchwork):
