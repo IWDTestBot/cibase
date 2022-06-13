@@ -435,7 +435,7 @@ class CiBase:
 
         cls.ldebug("Submit result\n%s" % pw_output)
 
-    def run_cmd(self, *args):
+    def run_cmd(self, *args, **kwargs):
         """ Run command and return return code, stdout and stderr """
 
         cmd = []
@@ -451,7 +451,8 @@ class CiBase:
                                 stdin=subprocess.DEVNULL,
                                 bufsize=1,
                                 universal_newlines=True,
-                                cwd=self.src_dir)
+                                cwd=self.src_dir,
+                                **kwargs)
         except OSError as e:
             self.lerror("ERROR: failed to run cmd: %s" % e)
             return (-1, None, None)
