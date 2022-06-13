@@ -1059,6 +1059,8 @@ class GithubComment(CiBase):
 
         self.patchwork.gh_pr.create_issue_comment(comment)
 
+        self.success()
+
 EMAIL_MESSAGE = '''
 This is automated email and please do not reply to this email!
 
@@ -1207,6 +1209,7 @@ class EmailResults(CiBase):
         self.compose_email(self.patchwork.series['name'], email,
                             self.patchwork.series['submitter']['email'],
                             self.patchwork[0]['msgid'])
+        self.success()
 
 if __name__ == '__main__':
     CiBase.run()
