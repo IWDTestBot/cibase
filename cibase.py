@@ -62,6 +62,8 @@ def parse_args():
                         help='Path to ELL source')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Display debugging info')
+    parser.add_argument('-x', '--external-trigger',  action='store_true',
+                        help='Triggered from external repository')
 
     return parser.parse_args()
 
@@ -273,6 +275,7 @@ class CiBase:
 
     verdict = Verdict.PENDING
     output = ""
+    ext_skip_pending = False
 
     #
     # Support several ways to initialize src_dir:
@@ -504,6 +507,9 @@ class PatchworkSetup(CiBase):
 
         # Initialize as pending
         for t in CiBase.suite.values():
+            if self.args.external_trigger and t.ext_skip_pending:
+                continue
+
             t.submit_result(Verdict.PENDING, "%s PENDING" % t.display_name)
 
         self.success()
@@ -513,6 +519,7 @@ class FetchPR(CiBase):
     display_name = "Fetch PR"
     desc = "Fetch the PR commits for this CI run"
     depends = ['patchwork']
+    ext_skip_pending = True
 
     def cmd_failed(self, stderr):
         self.lerror("Failed to fetch the PR commits. error=%s" % stderr)
@@ -522,7 +529,7 @@ class FetchPR(CiBase):
     def run(self):
         # Most other tests depend on fetch, so don't skip/fail this one even
         # if patchwork isn't being used.
-        if not self.patchwork:
+        if not self.patchwork or self.args.external_trigger:
             self.ldebug("Running without patches, skipping PR fetch")
             self.success()
 
@@ -546,6 +553,7 @@ class CheckPatch(CiBase):
     checkpatch_pl = '/usr/bin/checkpatch.pl'
     no_sob = False
     depends = ['patchwork']
+    ext_skip_pending = True
 
     def config(self):
         """
@@ -563,7 +571,7 @@ class CheckPatch(CiBase):
         self.ldebug("checkpatch_pl = %s" % self.checkpatch_pl)
 
     def run(self):
-        if not self.patchwork:
+        if not self.patchwork or self.args.external_trigger:
             self.skip('Patchwork not being used, skipping')
 
         self.ldebug("##### Run CheckPatch Test #####")
@@ -644,6 +652,7 @@ class GitLint(CiBase):
     desc = "Run gitlint with rule in .gitlint"
     depends = ['patchwork']
     gitlint_config = '/.gitlint'
+    ext_skip_pending = True
 
     def config(self):
         """
@@ -656,7 +665,7 @@ class GitLint(CiBase):
             self.gitlint_config = path_resolve(self.settings['config_path'])
 
     def run(self):
-        if not self.patchwork:
+        if not self.patchwork or self.args.external_trigger:
             self.skip('Patchwork not being used, skipping')
 
         self.ldebug("##### Run Gitlint v2 Test #####")
@@ -934,9 +943,10 @@ class IncrementalBuild(CiBase):
     display_name = "Incremental Build with patches"
     desc = "Incremental build per patch in the series"
     depends = ['setupell', 'patchwork']
+    ext_skip_pending = True
 
     def run(self):
-        if not self.patchwork:
+        if not self.patchwork or self.args.external_trigger:
             self.skip("Patchwork not being used, skipping")
 
         self.ldebug("##### Run Incremental Build Test #####")
