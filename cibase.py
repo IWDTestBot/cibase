@@ -489,6 +489,10 @@ class PatchworkSetup(CiBase):
     def run(self):
         self.config()
 
+        self.ldebug(self.user)
+        self.ldebug(self.args.repo)
+        self.ldebug(self.args.pr_num)
+
         if not self.user or not self.args.repo or not self.args.pr_num:
             # 'fetch' behaves differently depending on if patchwork is used or
             # not but the patchwork object must be initialized prior to fetch.
