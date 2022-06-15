@@ -404,7 +404,7 @@ class CiBase:
         return self.end_time - self.start_time
 
     @classmethod
-    def submit_result(cls, verdict: Verdict, description: str, patch=None):
+    def submit_result(cls, verdict: Verdict, description=None, patch=None):
         """
         Submit the result to Patchwork. Nearly all tests post to the first patch
         in the series so don't require a specific patch being passed in (this
@@ -422,6 +422,9 @@ class CiBase:
 
         if not patch:
             patch = cls.patchwork[0]
+
+        if not description:
+            description = cls.display_name
 
         cls.ldebug("Submitting the result to Patchwork")
         pw_output = cls.patchwork.post_result(patch, patchwork_state(verdict),
@@ -510,7 +513,7 @@ class PatchworkSetup(CiBase):
             if self.args.external_trigger and t.ext_skip_pending:
                 continue
 
-            t.submit_result(Verdict.PENDING, "%s PENDING" % t.display_name)
+            t.submit_result(Verdict.PENDING)
 
         self.success()
 
@@ -523,7 +526,7 @@ class FetchPR(CiBase):
 
     def cmd_failed(self, stderr):
         self.lerror("Failed to fetch the PR commits. error=%s" % stderr)
-        self.submit_result(Verdict.FAIL, "Fetch PR - FAIL: " + stderr)
+        self.submit_result(Verdict.FAIL, description="Fetch PR - FAIL: " + stderr)
         self.add_failure_end_test(stderr)
 
     def run(self):
@@ -543,7 +546,7 @@ class FetchPR(CiBase):
 
         self.ldebug("output>>\n%s" % stdout)
 
-        self.submit_result(Verdict.PASS, "Fetch PR PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class CheckPatch(CiBase):
@@ -590,22 +593,22 @@ class CheckPatch(CiBase):
                 msg = "{}\n{}".format(patch['name'], error)
                 if error.find("WARNING:") != -1:
                     if error.find("ERROR:") != -1:
-                        self.submit_result(Verdict.FAIL, msg, patch=patch)
+                        self.submit_result(Verdict.FAIL, description=msg, patch=patch)
                     else:
-                        self.submit_result(Verdict.WARNING, msg, patch=patch)
+                        self.submit_result(Verdict.WARNING, description=msg, patch=patch)
                 else:
-                    self.submit_result(Verdict.FAIL, msg, patch=patch)
+                    self.submit_result(Verdict.FAIL, description=msg, patch=patch)
 
                 self.add_failure(msg)
                 continue
 
             # Warning in output
             if output.find("WARNING:") != -1:
-                self.submit_result(Verdict.WARNING, output, patch=patch)
+                self.submit_result(Verdict.WARNING, description=output, patch=patch)
                 continue
 
             # Success
-            self.submit_result(Verdict.PASS, "Checkpatch PASS", patch=patch)
+            self.submit_result(Verdict.PASS, patch=patch)
 
         # Overall status
         if self.verdict != Verdict.FAIL:
@@ -682,12 +685,12 @@ class GitLint(CiBase):
             # Failed
             if output != None:
                 msg = "{}\n{}".format(patch['name'], output)
-                self.submit_result(Verdict.FAIL, msg, patch=patch)
+                self.submit_result(Verdict.FAIL, description=msg, patch=patch)
                 self.add_failure(msg)
                 continue
 
             # Success
-            self.submit_result(Verdict.PASS, "Gitlint PASS", patch=patch)
+            self.submit_result(Verdict.PASS, patch=patch)
 
         # Overall status
         if self.verdict != Verdict.FAIL:
@@ -746,13 +749,14 @@ class BuildSetup_ell(CiBase):
         (ret, stdout, stderr) = self.run_cmd("./bootstrap-configure")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Setup ELL - Configuration FAIL: " + stderr)
+                               description="Setup ELL - Configuration FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # make
         (ret, stdout, stderr) = self.run_cmd("make", "-j4")
         if ret:
-            self.submit_result(Verdict.FAIL, "Setup ELL - make FAIL: " + stderr)
+            self.submit_result(Verdict.FAIL,
+                                description="Setup ELL - make FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # install
@@ -760,10 +764,10 @@ class BuildSetup_ell(CiBase):
             (ret, stdout, stderr) = self.run_cmd("make", "install")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Setup ELL - make install FAIL: " + stderr)
+                                   description="Setup ELL - make install FAIL: " + stderr)
                 self.add_failure_end_test(stderr)
 
-        self.submit_result(Verdict.PASS, "Setup ELL PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class MakeDistcheck(CiBase):
@@ -781,7 +785,7 @@ class MakeDistcheck(CiBase):
         (ret, stdout, stderr) = self.run_cmd("./bootstrap-configure")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make Distcheck Configure FAIL: " + stderr)
+                               description="Make Distcheck Configure FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # Make distcheck
@@ -789,11 +793,11 @@ class MakeDistcheck(CiBase):
                                                 "distcheck", "-j4")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make Distcheck Make FAIL: " + stderr)
+                               description="Make Distcheck Make FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS, "Make Distcheck PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class Build(CiBase):
@@ -810,12 +814,11 @@ class Build(CiBase):
         (ret, stdout, stderr) = self.run_cmd("./bootstrap-configure")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Build Configuration FAIL: " + stderr)
+                               description="Build Configuration FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS,
-                           "Build Configuration PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class BuildMake(CiBase):
@@ -832,11 +835,11 @@ class BuildMake(CiBase):
         (ret, stdout, stderr) = self.run_cmd("make", "-j4")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make FAIL: " + stderr)
+                               description="Make FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS, "Make PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class MakeCheck(CiBase):
@@ -854,11 +857,11 @@ class MakeCheck(CiBase):
         (ret, stdout, stderr) = self.run_cmd("make", "check")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make Check FAIL: " + stderr)
+                               description="Make Check FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS, "Make Check PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class MakeCheckValgrind(CiBase):
@@ -875,24 +878,24 @@ class MakeCheckValgrind(CiBase):
                                         "--disable-lsan", "--disable-asan")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Build Configuration FAIL: " + stderr)
+                               description="Build Configuration FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # make
         (ret, stdout, stderr) = self.run_cmd("make", "-j4")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make FAIL: " + stderr)
+                               description="Make FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         (ret, stdout, stderr) = self.run_cmd("make", "check")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Make Check FAIL: " + stderr)
+                               description="Make Check FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS, "Make Check PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class BuildExtEll(CiBase):
@@ -909,12 +912,11 @@ class BuildExtEll(CiBase):
                                         "--enable-external-ell")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Build External ELL FAIL: " + stderr)
+                               description="Build External ELL FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS,
-                           "Build External ELL PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class BuildExtEllMake(CiBase):
@@ -930,12 +932,11 @@ class BuildExtEllMake(CiBase):
         (ret, stdout, stderr) = self.run_cmd("make", "-j4")
         if ret:
             self.submit_result(Verdict.FAIL,
-                               "Build Make with External ELL FAIL: " + stderr)
+                               description="Build Make with External ELL FAIL: " + stderr)
             self.add_failure_end_test(stderr)
 
         # At this point, consider test passed here
-        self.submit_result(Verdict.PASS,
-                           "Build Make with External ELL PASS")
+        self.submit_result(Verdict.PASS)
         self.success()
 
 class IncrementalBuild(CiBase):
@@ -955,7 +956,7 @@ class IncrementalBuild(CiBase):
         if len(self.patchwork) == 1:
             self.ldebug("Only 1 patch and no need to run here")
             self.submit_result(Verdict.PASS,
-                                "Incremental build not run PASS")
+                                description="Incremental build not run PASS")
             self.success()
 
         self.run_cmd('git', 'fetch')
@@ -974,7 +975,7 @@ class IncrementalBuild(CiBase):
             if error != None:
                 msg = "{}\n{}".format(patch['name'], error)
                 self.submit_result(Verdict.FAIL,
-                                   "Applying Patch FAIL (patch %d): " % i + error,
+                                   description="Applying Patch FAIL (patch %d): " % i + error,
                                    patch=patch)
                 self.add_failure_end_test(msg)
 
@@ -984,7 +985,7 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("./bootstrap-configure")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Build Configuration FAIL (patch %d): " % i + stderr,
+                                   description="Build Configuration FAIL (patch %d): " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
@@ -992,7 +993,7 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("make", "-j4")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Make FAIL (patch %d):  " % i + stderr,
+                                   description="Make FAIL (patch %d):  " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
@@ -1000,12 +1001,12 @@ class IncrementalBuild(CiBase):
             (ret, stdout, stderr) = self.run_cmd("make", "distclean")
             if ret:
                 self.submit_result(Verdict.FAIL,
-                                   "Make Clean FAIL (patch %d): " % i + stderr,
+                                   description="Make Clean FAIL (patch %d): " % i + stderr,
                                    patch=patch)
                 self.add_failure_end_test(stderr)
 
         # All patch passed the build test
-        self.submit_result(Verdict.PASS, "Pass")
+        self.submit_result(Verdict.PASS)
         self.success()
 
     def apply_patch(self, patch):
