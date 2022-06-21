@@ -441,7 +441,7 @@ class CiBase:
 
         cls.ldebug("Submit result\n%s" % pw_output)
 
-    def run_cmd(self, *args, **kwargs):
+    def run_cmd(self, *args, timeout=None, **kwargs):
         """ Run command and return return code, stdout and stderr """
 
         cmd = []
@@ -468,7 +468,13 @@ class CiBase:
             stdout += line
 
         # stdout is consumed in previous line. so, communicate() returns empty
-        _, stderr = proc.communicate()
+        try:
+            _, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            self.lerror("ERROR: failed to run cmd after timeout: %s" % e)
+            proc.kill()
+            proc.communicate()
+            return (-1, None, None)
 
         self.ldebug(">> STDERR\n{}".format(stderr))
 
