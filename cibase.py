@@ -1144,13 +1144,13 @@ class EmailResults(CiBase):
         self.ldebug("Get Receivers list")
 
         receivers = []
+
+        maintainers = "".join(self.settings['maintainers'].splitlines()).split(",")
+        receivers.extend(maintainers)
+
         if self.is_maintainer_only():
-            # Send only to the addresses in the 'maintainers'
-            maintainers = "".join(self.settings['maintainers'].splitlines()).split(",")
-            receivers.extend(maintainers)
+           return receivers
         else:
-            # Send to default-to address and submitter
-            receivers.append(self.settings['default-to'])
             receivers.append(submitter)
 
         return receivers
