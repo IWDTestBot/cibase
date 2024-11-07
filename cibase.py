@@ -512,7 +512,12 @@ class PatchworkSetup(CiBase):
             # signal success so these tests get run.
             self.success()
 
-        CiBase.patchwork = Patchwork(self.user, self.args.repo, self.args.pr_num)
+        try:
+            CiBase.patchwork = Patchwork(self.user, self.args.repo, self.args.pr_num)
+        except Exception as e:
+            self.ldebug("Unable to find matching patchwork entry, skipping")
+            self.skip()
+            return
 
         # Initialize as pending
         for t in CiBase.suite.values():

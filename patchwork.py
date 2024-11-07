@@ -107,6 +107,10 @@ class Patchwork:
 		gh_repo = Github(gh_token).get_repo(repo)
 		self.gh_pr = gh_repo.get_pull(pr)
 		sid = get_sid(self.gh_pr.title)
+
+		if not sid:
+			raise Exception("Unable to find series ID")
+
 		self.series = get_series(sid)
 
 		print(self.series)
