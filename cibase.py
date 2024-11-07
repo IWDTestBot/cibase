@@ -516,7 +516,7 @@ class PatchworkSetup(CiBase):
             CiBase.patchwork = Patchwork(self.user, self.args.repo, self.args.pr_num)
         except Exception as e:
             self.ldebug("Unable to find matching patchwork entry, skipping")
-            self.skip("Unable to find matching patchwork entry")
+            self.success()
             return
 
         # Initialize as pending
